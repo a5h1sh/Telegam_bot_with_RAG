@@ -8,3 +8,5 @@
 "*.safetensors" 
 "db/" 
 ".env" 
+"cache/" 
+"*.safetensors" 
