@@ -1,0 +1,17 @@
+python-dotenv
+pyTelegramBotAPI
+sentence-transformers
+transformers
+torch
+torchvision
+safetensors
+accelerate
+ftfy
+Pillow
+PyPDF2
+python-docx
+pymupdf
+clip-interrogator @ git+https://github.com/pharmapsychotic/clip-interrogator.git@main
+# optional: include any LLM client libraries you use (openai, ollama-client, etc.)
+openai
+requests

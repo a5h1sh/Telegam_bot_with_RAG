@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  rag-bot:
+    image: python:3.11-slim
+    container_name: rag-bot
+    working_dir: /app
+    volumes:
+      - ./:/app:rw
+    env_file:
+      - ./.env
+    environment:
+      # ensure these are forwarded from .env or override here
+      - ENABLE_TEXT_PIPELINE=${ENABLE_TEXT_PIPELINE}
+      - ENABLE_IMAGE_PIPELINE=${ENABLE_IMAGE_PIPELINE}
+      - ENABLE_IMAGE_CAPTIONING=${ENABLE_IMAGE_CAPTIONING}
+    command: ["bash", "-lc", "pip install -r requirements.txt && python main.py"]
+    restart: unless-stopped
+    # If you require GPU support, replace base image and add device mapping (advanced).
