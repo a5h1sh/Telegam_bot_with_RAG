@@ -44,7 +44,7 @@ ENABLE_IMAGE_CAPTIONING = os.getenv("ENABLE_IMAGE_CAPTIONING", "true").lower() =
 # Pipeline enable flags (control which pipelines are active)
 # Set via .env: ENABLE_TEXT_PIPELINE=true/false, ENABLE_IMAGE_PIPELINE=true/false
 ENABLE_TEXT_PIPELINE = os.getenv("ENABLE_TEXT_PIPELINE", "true").lower() == "true"
-ENABLE_IMAGE_PIPELINE = os.getenv("ENABLE_IMAGE_PIPELINE", "true").lower() == "true"
+ENABLE_IMAGE_PIPELINE = os.getenv("ENABLE_IMAGE_PIPELINE", "true").lower() == "False"
 
 # Logging
 LOG_LEVEL = logging.INFO
