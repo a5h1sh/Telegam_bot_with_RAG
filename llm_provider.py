@@ -5,21 +5,27 @@ logger = logging.getLogger(__name__)
 
 class LLMProvider:
     """Unified LLM provider supporting multiple backends."""
-    def __init__(self, provider: str = LLM_PROVIDER):
-        self.provider = provider
-        self.client = None
+    def __init__(self):
+        self.provider = LLM_PROVIDER
+        self.llm = None
         self._init_provider()
 
     def _init_provider(self):
-        """Initialize LLM provider based on config."""
-        if self.provider == "huggingface":
+        if self.provider == "ollama":
+            try:
+                self._init_ollama()
+                logger.info("✅ Ollama provider initialized successfully.")
+            except Exception as e:
+                logger.error(f"Ollama init failed: {e}")
+                logger.warning("⚠️ Falling back to Hugging Face provider.")
+                self.provider = "huggingface"
+                self._init_huggingface() # Attempt to use HF as a backup
+        elif self.provider == "huggingface":
             self._init_huggingface()
-        elif self.provider == "ollama":
-            self._init_ollama()
         elif self.provider == "openai":
             self._init_openai()
         else:
-            logger.error(f"Unknown LLM provider: {self.provider}")
+            raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
     def _init_huggingface(self):
         """Initialize HuggingFace model."""
