@@ -10,3 +10,5 @@
 ".env" 
 "cache/" 
 "*.safetensors" 
+"cache/" 
+"db/" 
