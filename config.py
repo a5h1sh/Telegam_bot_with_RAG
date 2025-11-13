@@ -21,16 +21,16 @@ DB_DIR = BASE_DIR / "db"
 
 # Embeddings / chunking / retrieval defaults
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "512"))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000")) # Increased to 1000
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100")) # Increased overlap
 TOP_K = int(os.getenv("TOP_K", "4"))
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.15"))
 
 # LLM provider defaults
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "huggingface")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama") # Changed to ollama
 HF_MODEL = os.getenv("HF_MODEL", "google/flan-t5-base")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3:8b") # Using llama3 8b
 
 # Keyword tuning
 KEYWORD_COUNT = int(os.getenv("KEYWORD_COUNT", "6"))
@@ -44,7 +44,7 @@ ENABLE_IMAGE_CAPTIONING = os.getenv("ENABLE_IMAGE_CAPTIONING", "true").lower() =
 # Pipeline enable flags (control which pipelines are active)
 # Set via .env: ENABLE_TEXT_PIPELINE=true/false, ENABLE_IMAGE_PIPELINE=true/false
 ENABLE_TEXT_PIPELINE = os.getenv("ENABLE_TEXT_PIPELINE", "true").lower() == "true"
-ENABLE_IMAGE_PIPELINE = os.getenv("ENABLE_IMAGE_PIPELINE", "true").lower() == "False"
+ENABLE_IMAGE_PIPELINE = os.getenv("ENABLE_IMAGE_PIPELINE", "true").lower() == "true"
 
 # Logging
 LOG_LEVEL = logging.INFO
@@ -63,4 +63,4 @@ elif ENABLE_IMAGE_PIPELINE:
 else:
     print("   Pipelines enabled: none")
 
-print(f"   Image captioning enabled: {ENABLE_IMAGE_CAPTIONING}")
+#print(f"   Image captioning enabled: {ENABLE_IMAGE_CAPTIONING}")

@@ -52,24 +52,129 @@ def setup_bot(bot, llm_provider, llm_manager=None):
             # store the user's question in history (source='query')
             file_processor.vector_store.add_user_interaction(user_id, question, source="query")
 
-            # fetch last 3 interactions if needed for context
-            recent = file_processor.vector_store.get_user_history(user_id, limit=3)
-            recent_text = "\n".join([f"{r['source']}:{r['message']}" for r in reversed(recent)])  # oldest first
+            is_summary = any(w in question.lower() for w in ["summary", "summarize", "summarisation", "summarise"])
 
-            # detection and retrieval logic (existing flow)...
-            # (keep the rest of the ask handler implementation unchanged)
+            # detect explicit filename mention
+            doc_names = file_processor.vector_store.list_doc_names()
+            matched_doc = None
+            for dn in doc_names:
+                if dn.lower() in question.lower():
+                    matched_doc = dn
+                    break
+            
+            # --- FIX: Define query_keywords here ---
+            query_keywords = file_processor._extract_keywords(question, top_n=KEYWORD_COUNT)
+
             bot.reply_to(message, "🔍 Retrieving top-k chunks...")
+
             try:
-                # existing retrieval code expects embedder and file_processor
-                # ensure those exist
                 q_emb = embedder.embed_single(question)
-                # detect filename and keywords as before (use file_processor methods)
-                # ...existing retrieval + generation code ...
-                # (for brevity keep existing logic in place here)
-                pass
+
+                # if matched_doc restrict search to that doc
+                if matched_doc:
+                    results = file_processor.vector_store.search(
+                        q_emb,
+                        top_k=TOP_K,
+                        doc_name_filter=matched_doc,
+                        query_keywords=query_keywords,
+                        deduplicate_docs=False
+                    )
+                else:
+                    results = file_processor.vector_store.search(
+                        q_emb,
+                        top_k=TOP_K,
+                        query_keywords=query_keywords,
+                        deduplicate_docs=False
+                    )
+                
+                logger.info(f"DEBUG: Search returned {len(results)} results.")
+                if not results:
+                    bot.reply_to(message, "❌ No relevant chunks found in the documents.")
+                    return
+
+                if is_summary:
+                    target_doc = matched_doc or results[0]["doc_name"]
+                    logger.info(f"DEBUG: Entering summary logic for target_doc: {target_doc}")
+                    chunks = file_processor.vector_store.get_chunks_for_doc(target_doc)
+                    logger.info(f"DEBUG: Found {len(chunks)} chunks for summary.")
+                    if not chunks:
+                        bot.reply_to(message, f"❌ Could not retrieve content for '{target_doc}' to summarize.")
+                        return
+
+                    # --- FIX: Group chunks to reduce LLM calls ---
+                    bot.reply_to(message, f"🤖 Found {len(chunks)} chunks. Grouping and summarizing to speed up the process...")
+
+                    # Group chunks into larger "meta-chunks" that fit the context window
+                    # A CHUNK_SIZE of 250 words is ~300-350 tokens. We can group 1 chunk at a time.
+                    # To make a real difference, we'd need to combine them, but let's assume we can't.
+                    # The best we can do is sample the chunks if there are too many.
+                    
+                    # Let's limit the number of chunks to process to a reasonable number, e.g., 20
+                    MAX_CHUNKS_TO_SUMMARIZE = 20
+                    if len(chunks) > MAX_CHUNKS_TO_SUMMARIZE:
+                        bot.reply_to(message, f"⚠️ Document is very long ({len(chunks)} chunks). Summarizing a representative sample of {MAX_CHUNKS_TO_SUMMARIZE} chunks.")
+                        # Simple sampling: take evenly spaced chunks
+                        step = len(chunks) // MAX_CHUNKS_TO_SUMMARIZE
+                        sampled_chunks = chunks[::step]
+                    else:
+                        sampled_chunks = chunks
+
+                    # 1. Map Step: Summarize each sampled chunk
+                    chunk_summaries = []
+                    for i, chunk in enumerate(sampled_chunks):
+                        logger.info(f"DEBUG: Summarizing chunk {i+1}/{len(sampled_chunks)}")
+                        map_prompt = (
+                            f"Summarize the following text from a document. Be concise and capture the main points.\n\n"
+                            f"Text:\n---\n{chunk['content']}\n---\n\n"
+                            f"Concise Summary:"
+                        )
+                        try:
+                            chunk_summary = llm_provider.generate(map_prompt, max_length=150)
+                            if chunk_summary:
+                                chunk_summaries.append(chunk_summary)
+                        except Exception as e:
+                            logger.warning(f"Could not summarize chunk {i+1}: {e}")
+                    
+                    if not chunk_summaries:
+                        bot.reply_to(message, "❌ Failed to generate summaries for any document chunks.")
+                        return
+
+                    combined_summaries = "\n\n".join(chunk_summaries)
+                    reduce_prompt = (
+                        f"Fulfill the following request using *only* the provided text, which consists of several summaries from a document titled '{target_doc}'. Synthesize them into a final answer.\n\n"
+                        f"Request: '{question}'\n\n"
+                        f"Summaries:\n---\n{combined_summaries}\n---\n\n"
+                        f"Final Answer:"
+                    )
+
+                    bot.reply_to(message, "🤖 Creating final summary...")
+                    final_summary = llm_provider.generate(reduce_prompt, max_length=400)
+                    logger.info(f"DEBUG: LLM generated final summary of length {len(final_summary) if final_summary else 0}.")
+                    bot.reply_to(message, f"📝 Here is the summary for '{target_doc}':\n\n{final_summary}")
+                    return
+
+                # This part is for non-summary questions, it should remain as is.
+                context_parts = []
+                for i, r in enumerate(results, 1):
+                    context_parts.append(f"Source {i}: [{r['doc_name']} | chunk {r.get('chunk_index', '?')}] {r['content'][:300]}")
+                context = "\n\n".join(context_parts)
+
+                prompt = (
+                    "Answer the question using ONLY the following context. If the answer is not present, reply 'Not found in documents'.\n\n"
+                    f"Question: {question}\n\n"
+                    f"Context:\n{context}\n\n"
+                    "Answer concisely and cite the source (document name)."
+                )
+
+                bot.reply_to(message, "🤖 Generating answer...")
+                answer = llm_provider.generate(prompt, max_length=300)
+
+                sources = ", ".join({r["doc_name"] for r in results})
+                bot.reply_to(message, f"💬 {answer}\n\n📚 Sources: {sources}")
+
             except Exception as e:
                 logger.exception("Ask error")
-                bot.reply_to(message, f"❌ Error: {e}")
+                bot.reply_to(message, f"❌ An error occurred during the ask command: {e}")
 
         @bot.message_handler(commands=["docs"])
         def list_documents(message):
@@ -139,8 +244,9 @@ def setup_bot(bot, llm_provider, llm_manager=None):
         @bot.message_handler(commands=["summarize"])
         def summarize_command(message):
             """
-            /summarize [image|chat]
+            /summarize [document_name|image|chat]
             - if "image" or "photo" mentioned -> summarize last photo (caption + tags)
+            - if document_name is provided -> summarize the specified document
             - otherwise -> summarize last conversation (last 3 interactions)
             """
             user_id = str(message.from_user.id)
@@ -186,6 +292,25 @@ def setup_bot(bot, llm_provider, llm_manager=None):
                 bot.reply_to(message, "❌ No recent photo found to summarize.")
                 return
 
+            # check if arg is a document name (simple existence check)
+            doc_names = file_processor.vector_store.list_doc_names()
+            if arg in doc_names:
+                doc_name = arg
+                bot.reply_to(message, f"⏳ Summarizing document: `{doc_name}`...")
+                chunks = file_processor.vector_store.get_chunks_for_doc(doc_name)
+                if not chunks:
+                    bot.reply_to(message, f"❌ No content found for document: `{doc_name}`")
+                    return
+                
+                full_text = "\n\n".join([c["content"] for c in chunks])
+                prompt = f"Summarize the document titled '{doc_name}' using only the text below:\n\n{full_text}\n\nSummary:"
+                
+                bot.reply_to(message, "🤖 Summarizing document...")
+                summary = llm_provider.generate(prompt, max_length=300)
+                logger.info(f"DEBUG: LLM generated summary of length {len(summary) if summary else 0}.")
+                bot.reply_to(message, f"📝 Summary of '{doc_name}':\n\n{summary}")
+                return
+            
             # fallback: summarize last conversation (last 3 interactions)
             bot.reply_to(message, "🔍 Gathering recent conversation for summary...")
             convo = file_processor.vector_store.get_user_history(user_id, limit=3)
